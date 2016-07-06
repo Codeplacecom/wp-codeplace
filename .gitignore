@@ -1,3 +1,4 @@
 # Hidden files
 *.DS_Store
 *Thumbs.db
+.gitignore
