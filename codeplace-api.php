@@ -1,7 +1,5 @@
 <?php
-/* Based off of code by Brian Fegter.  Improved upon by Connor Hood for Codeplace.com (authentication added) */
 class Codeplace_API_Endpoint {
-
   /** Hook WordPress
   * @return void
   */
@@ -58,12 +56,9 @@ class Codeplace_API_Endpoint {
     if(!$valid_method)
       $this->send_response('That method could not be found.');
 
-    $authentication = $this->authenticate_request();
+    $request_data = $this->authenticate_request();
 
-    if($authentication)
-      $this->$cp_api_method();
-    else
-      $this->send_response('Authentication failed.');
+    $this->$cp_api_method($request_data);
   }
 
   /** Check if a method exists
@@ -72,9 +67,7 @@ class Codeplace_API_Endpoint {
   * @return false if method does not eixst
   */
   protected function method_exists($method_name) {
-
     return method_exists($this,$method_name);
-
   }
 
   /** Authenticate Requests
@@ -87,22 +80,15 @@ class Codeplace_API_Endpoint {
     if ($_SERVER['REQUEST_METHOD'] != 'POST')
       $this->send_response('This endpoint accepts POST requests only.');
 
-    if(empty($_REQUEST['username']))
-      $this->send_response('username parameter is missing.');
+    if(empty($_REQUEST['data']))
+      $this->send_response('data parameter is missing.');
 
-    if(empty($_REQUEST['password']))
-      $this->send_response('password parameter is missing.');
+    $data = base64_decode($_REQUEST['data']);
+    $cp_public = get_option("cp_public_key");
+    if(!openssl_public_decrypt($data, &$decrypted_data, $cp_public))
+      $this->send_response('Decryption failed');
 
-    $username = $_REQUEST['username'];
-    $password = $_REQUEST['password'];
-
-    $user = get_user_by( 'login', $username );
-
-
-    if ( $user && wp_check_password( $password, $user->data->user_pass, $user->ID) )
-      return true;
-    else
-      return false;
+    return json_decode($decrypted_data);
   }
 
   /** Response Handler
@@ -117,21 +103,73 @@ class Codeplace_API_Endpoint {
       exit;
   }
 
+  /**
+  * Setup Codeplace authentication
+  */
+  protected function complete_registration($data){
+    if($data->blog->url == site_url()) {
+      update_option('cp_uuid',$data->blog->uuid);
+      update_option('cp_user_email',$data->user->email);
+      update_option('cp_user_name',$data->user->name);
 
+      $this->send_response('success');
+    }
+    $this->send_response('wrong url: '.$data->blog->url.' - '.site_url());
+
+
+    // $cp_public = get_option("cp_public_key");
+
+    // $data = array('domain' => site_url());
+    // $data = json_encode($data);
+    // openssl_public_encrypt($data, &$encrypted_data, $cp_public);
+
+    // $post_data = array('encrypted' => $encrypted_data);
+
+    // $this->add_endpoint();
+    // flush_rewrite_rules();
+
+    // $request = wp_remote_post( CP_API.'connect/wordpress', array(
+    //   'method' => 'POST',
+    //   'sslverify' => false,
+    //   'body' => $post_data
+    // ));
+
+    // if(is_wp_error($request))
+    //   $this->send_response($request->get_error_message());
+
+    // $response = json_decode($request['body']);
+
+    // if($response->status == 'success') {
+    //   $encrypted = base64_decode($response->data);
+    //   if(openssl_public_decrypt($encrypted, &$decrypted_data, $cp_public)){
+
+    //     if($decrypted_data->blog->url == site_url()) {
+    //       update_option('cp_uuid',$decrypted_data->blog->uuid);
+    //       update_option('cp_user_email',$decrypted_data->user->email);
+    //       update_option('cp_user_name',$decrypted_data->user->name);
+
+    //       $this->send_response('success');
+    //     }
+    //     $this->send_response('urls dont match');
+
+    //   }
+    //   $this->send_response('decryption failed');
+    // }
+    // $this->send_response('cp server did not return status success');
+  }
 
   /**
   * This method allows us to check if the blogger has our plugin installed.
   */
-  protected function hello() {
+  protected function hello($data) {
 
     $this->send_response('success');
   }
 
-
   /**
   * This method returns info on the Codeplace.com WordPress plugin
   */
-  protected function plugin_info() {
+  protected function plugin_info($data) {
 
     global $codeplace_licensing_plugin;
 
@@ -153,7 +191,7 @@ class Codeplace_API_Endpoint {
   * First option: cp_tracking_id.  This should be the piwik ID, or be empty.
   * Second option: cp_analytics_2.  This should be true or false.  If true, track.codeplace is outputted.
   */
-  protected function analytics() {
+  protected function analytics($data) {
 
     $piwik_id = $_POST['piwik_id'];
 
@@ -176,7 +214,7 @@ class Codeplace_API_Endpoint {
   /**
   * This method returns the total number of posts and pages.
   */
-  protected function count_posts() {
+  protected function count_posts($data) {
 
     $published_posts = wp_count_posts()->publish;
     $published_pages = wp_count_posts('page')->publish;
@@ -186,25 +224,11 @@ class Codeplace_API_Endpoint {
 
   }
 
-
-  /**
-  * This method updates XMLRPC auth on Codeplace api
-  */
-  protected function update_authentication(){
-
-    global $codeplace_licensing_plugin;
-    $send_auth = $codeplace_licensing_plugin->send_auth();
-
-    $this->send_response($send_auth);
-
-  }
-
-
   /**
   * This method clears the cache on a specific post.
   * Params: post_ID
   */
-  protected function clear_post_cache() {
+  protected function clear_post_cache($data) {
 
     if(empty($_REQUEST['post_id']))
       $this->send_response('Missing post_id param');
@@ -240,12 +264,12 @@ class Codeplace_API_Endpoint {
   * This method returns a post ID based off the inputted URL
   * Arguments: url
   */
-  protected function get_post_id_from_url() {
+  protected function get_post_id_from_url($data) {
 
-    if(empty($_REQUEST['url']))
+    if(empty($data->url))
       $this->send_response('Missing url param');
 
-    $post_ID = url_to_postid($_REQUEST['url']);
+    $post_ID = url_to_postid($data->url);
 
     if($post_ID)
       $this->send_response('success',array('post_id' => $post_ID));
@@ -257,12 +281,12 @@ class Codeplace_API_Endpoint {
   * This method returns the post content
   * Arguments: post_ID
   */
-  protected function get_post_content() {
+  protected function get_post_content($data) {
 
-    if(empty($_REQUEST['post_id']))
+    if(empty($data->post_id))
       $this->send_response('Missing post_id parameter.');
 
-    $post_ID = $_REQUEST['post_id'];
+    $post_ID = $data->post_id;
 
     $post_object = get_post( $post_ID );
 
@@ -287,41 +311,41 @@ class Codeplace_API_Endpoint {
   * @param redirect_location (string) - optional if deleting
   * @param status (create|update|delete) - optional, default: create
   */
-  protected function full_traffic_license() {
+  protected function full_traffic_license($data) {
 
-    if(empty($_REQUEST['post_id']))
+    if(empty($data->post_id))
       $this->send_response('Missing post_id parameter.');
 
-    if(empty($_REQUEST['status']))
+    if(empty($data->status))
       $status = 'create';
     else
-      $status = $_REQUEST['status'];
+      $status = $data->status;
 
-    $post_id = $_REQUEST['post_id'];
+    $post_id = $data->post_id;
 
-    if(empty($_REQUEST['temporary']))
+    if(empty($data->temporary))
       $type = 1;
     else
-      ($_REQUEST['temporary'] == 'true') ? $type = 4 : $type = 1;
+      ($data->temporary == 'true') ? $type = 4 : $type = 1;
 
     switch($status) {
 
       case 'create':
 
-        if(empty($_REQUEST['redirect_location']))
+        if(empty($data->redirect_location))
           $this->send_response('Missing redirect_location parameter.');
 
-        update_post_meta($post_id,'_cp_redirect_location',$_REQUEST['redirect_location']);
+        update_post_meta($post_id,'_cp_redirect_location',$data->redirect_location);
         $update = update_post_meta($post_id,'_cp_license_type',$type);
 
       break;
 
       case 'update':
 
-        if(empty($_REQUEST['redirect_location']))
+        if(empty($data->redirect_location))
           $this->send_response('Missing redirect_location parameter.');
 
-        update_post_meta($post_id,'_cp_redirect_location',$_REQUEST['redirect_location']);
+        update_post_meta($post_id,'_cp_redirect_location',$data->redirect_location);
         $update = update_post_meta($post_id,'_cp_license_type',$type);
 
       break;
@@ -354,15 +378,16 @@ class Codeplace_API_Endpoint {
   * This methods returns an array of posts
   * @param args (array)
   */
-  protected function get_posts() {
+  protected function get_posts($data) {
 
-    if(empty($_REQUEST['args']))
-      $this->send_response('Missing args array');
-
-    $posts = get_posts($_REQUEST['args']);
+    if(empty($data->args))
+      $posts = get_posts();
+    else
+      $posts = get_posts($data->args);
 
     if($posts)
       foreach($posts as $post) {
+        $post->post_author = get_userdata($post->post_author)->display_name;
         $post->processed_content = do_shortcode( wpautop($post->post_content) );
         $post->permalink = get_permalink($post->ID);
       }
@@ -380,23 +405,23 @@ class Codeplace_API_Endpoint {
   * @param post (array)
   * @param status (create|update|delete) - optional, default: create
   */
-  protected function draft_post() {
+  protected function draft_post($data) {
 
 
-    if(empty($_REQUEST['status']))
+    if(empty($data->status))
       $status = 'create';
     else
-      $status = $_REQUEST['status'];
+      $status = $data->status;
 
 
     switch($status) {
 
       case 'create':
 
-        if(empty($_REQUEST['post']))
+        if(empty($data->post))
           $this->send_response('Missing post array.');
 
-        $post = $_REQUEST['post'];
+        $post = $data->post;
         $post['post_status'] = 'draft';
 
         $create_post = wp_insert_post($post);
@@ -417,10 +442,10 @@ class Codeplace_API_Endpoint {
 
       case 'update':
 
-        if(empty($_REQUEST['post']))
+        if(empty($data->post))
           $this->send_response('Missing post array.');
 
-        $post = $_REQUEST['post'];
+        $post = $data->post;
 
         $check_for_codeplace_post = get_post_meta($post['ID'],'_cp_is_codeplace_post',true);
 
@@ -445,10 +470,10 @@ class Codeplace_API_Endpoint {
       break;
 
       case 'delete':
-        if(empty($_REQUEST['post']))
+        if(empty($data->post))
           $this->send_response('Missing post array.');
 
-        $post = $_REQUEST['post'];
+        $post = $data->post;
 
         $check_for_codeplace_post = get_post_meta($post['ID'],'_cp_is_codeplace_post',true);
 
