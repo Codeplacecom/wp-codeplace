@@ -12,7 +12,7 @@ define("CP_API", "http://192.168.1.102:3000/v1/", true);// http://api.codeplace.
 define("CP_EMAIL", "api@codeplace.com", true);
 define("CP_USER", "codeplaceapi_", true);
 
-class Codeplace_Licensing_Plugin {
+class Codeplace_Plugin {
 
   var $version = '0.0.1';
 
@@ -120,6 +120,6 @@ class Codeplace_Licensing_Plugin {
   }
 }
 
-global $codeplace_licensing_plugin;
-$codeplace_licensing_plugin = new Codeplace_Licensing_Plugin();
-$codeplace_licensing_plugin->bootstrap();
+global $codeplace_plugin;
+$codeplace_plugin = new Codeplace_Plugin();
+$codeplace_plugin->bootstrap();

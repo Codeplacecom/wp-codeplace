@@ -2,7 +2,7 @@
 // Set the Options Page
 
 function cp_display_settings(){
-  global $codeplace_licensing_plugin;
+  global $codeplace_plugin;
   $send_auth = '';
 
   $uuid = get_option('cp_uuid');

@@ -171,7 +171,7 @@ class Codeplace_API_Endpoint {
   */
   protected function plugin_info($data) {
 
-    global $codeplace_licensing_plugin;
+    global $codeplace_plugin;
 
     $version = get_bloginfo('version');
 
