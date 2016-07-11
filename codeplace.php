@@ -35,7 +35,7 @@ class Codeplace_Licensing_Plugin {
     add_action('admin_menu', array($this,'plugin_settings'));
     add_action('init',array($this,'register_meta'));
     add_action('admin_init', array($this,'plugin_redirect'));
-    add_action( 'wp_enqueue_scripts', array($this,'codeplace_styles') ,1);
+
 
     $curr_ver = get_option($this->plugin_version_key, null);
     if($curr_ver != null && $curr_ver != $this->version)

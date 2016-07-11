@@ -316,10 +316,10 @@ class Codeplace_API_Endpoint {
     if(empty($data->post_id))
       $this->send_response('Missing post_id parameter.');
 
-    if(empty($data->status))
-      $status = 'create';
-    else
-      $status = $data->status;
+    if(empty($data->action))
+      $this->send_response('Missing action parameter.');
+
+    $status = $data->action;
 
     $post_id = $data->post_id;
 
