@@ -1,5 +1,5 @@
 <?php
-class Codeplace_API_Endpoint {
+class Codeplace_API {
   /** Hook WordPress
   * @return void
   */
@@ -85,6 +85,7 @@ class Codeplace_API_Endpoint {
 
     $data = base64_decode($_REQUEST['data']);
     $cp_public = get_option("cp_public_key");
+
     if(!openssl_public_decrypt($data, &$decrypted_data, $cp_public))
       $this->send_response('Decryption failed');
 
@@ -175,52 +176,13 @@ class Codeplace_API_Endpoint {
 
     $version = get_bloginfo('version');
 
-    $plugin_info['codeplace_version'] = get_option('cp_plugin_version_number');
-    $plugin_info['codeplace_user_id'] = get_option("cp_user_id");
-    $plugin_info['wp_version'] = $version;
-    $plugin_info['piwik_id'] = get_option('cp_tracking_id');
-    $plugin_info['cp_analytics_2'] = get_option('cp_analytics_2');
+    $plugin_info['plugin_version'] = get_option('cp_plugin_version_number');
+    $plugin_info['uuid'] = get_option("cp_uuid");
+    $plugin_info['wp_version'] = get_bloginfo('version');
+
 
 
     $this->send_response('success',$plugin_info);
-
-  }
-
-  /**
-  * This method updates the two analytics options
-  * First option: cp_tracking_id.  This should be the piwik ID, or be empty.
-  * Second option: cp_analytics_2.  This should be true or false.  If true, track.codeplace is outputted.
-  */
-  protected function analytics($data) {
-
-    $piwik_id = $_POST['piwik_id'];
-
-    if($piwik_id == 'delete')
-      delete_option('cp_tracking_id');
-    elseif(isset($piwik_id))
-      update_option('cp_tracking_id',$piwik_id);
-
-
-    $cp_analytics = $_POST['analytics_beta'];
-
-    if(isset($cp_analytics))
-      update_option('cp_analytics_2',$cp_analytics);
-
-
-    $this->send_response('success',array('cp_analytics_2' => get_option('cp_analytics_2'),'cp_tracking_id' => get_option('cp_tracking_id')));
-
-  }
-
-  /**
-  * This method returns the total number of posts and pages.
-  */
-  protected function count_posts($data) {
-
-    $published_posts = wp_count_posts()->publish;
-    $published_pages = wp_count_posts('page')->publish;
-    $total = $published_pages + $published_posts;
-
-    $this->send_response('success',array('posts' => $published_posts, 'pages' => $published_pages));
 
   }
 
@@ -230,10 +192,10 @@ class Codeplace_API_Endpoint {
   */
   protected function clear_post_cache($data) {
 
-    if(empty($_REQUEST['post_id']))
+    if(empty($data->post_id))
       $this->send_response('Missing post_id param');
 
-    $post_ID = $_REQUEST['post_id'];
+    $post_ID = $data->post_id;
 
     if(function_exists('wp_cache_post_change')) {
       $GLOBALS["super_cache_enabled"]=1;
@@ -244,16 +206,12 @@ class Codeplace_API_Endpoint {
       hyper_cache_invalidate_post($post_ID);
     }
 
-    if (function_exists('w3tc_pgcache_flush_post')){
-
+    if(function_exists('w3tc_pgcache_flush_post')){
       w3tc_pgcache_flush_post($post_ID);
-
     }
 
-    if (function_exists('w3tc_flush_pgcache_purge_page')){
-
+    if(function_exists('w3tc_flush_pgcache_purge_page')){
       w3tc_flush_pgcache_purge_page($post_ID);
-
     }
 
     $this->send_response('success',array('post_id' => $post_ID));
@@ -261,117 +219,47 @@ class Codeplace_API_Endpoint {
   }
 
   /**
-  * This method returns a post ID based off the inputted URL
-  * Arguments: url
-  */
-  protected function get_post_id_from_url($data) {
-
-    if(empty($data->url))
-      $this->send_response('Missing url param');
-
-    $post_ID = url_to_postid($data->url);
-
-    if($post_ID)
-      $this->send_response('success',array('post_id' => $post_ID));
-    else
-      $this->send_response('error');
-  }
-
-  /**
-  * This method returns the post content
-  * Arguments: post_ID
-  */
-  protected function get_post_content($data) {
-
-    if(empty($data->post_id))
-      $this->send_response('Missing post_id parameter.');
-
-    $post_ID = $data->post_id;
-
-    $post_object = get_post( $post_ID );
-
-    if($post_object) {
-      $content = do_shortcode( $post_object->post_content );
-
-      $this->send_response('success',array(
-        'content' => wpautop($content),
-        'post' => $post_object
-      ));
-
-    } else {
-      $this->send_response('error');
-    }
-
-  }
-
-  /**
   * This methods creates/updates/deletes a full traffic license.
   * @param temporary (boolean) - optional, default: false
   * @param post_id (integer) - required
-  * @param redirect_location (string) - optional if deleting
-  * @param status (create|update|delete) - optional, default: create
+  * @param redirect_location (string)
   */
-  protected function full_traffic_license($data) {
+  protected function create_full_traffic_license($data) {
 
     if(empty($data->post_id))
       $this->send_response('Missing post_id parameter.');
 
-    if(empty($data->action))
-      $this->send_response('Missing action parameter.');
-
-    $status = $data->action;
-
     $post_id = $data->post_id;
 
-    if(empty($data->temporary))
-      $type = 1;
-    else
-      ($data->temporary == 'true') ? $type = 4 : $type = 1;
+    if(empty($data->redirect_location))
+      $this->send_response('Missing redirect_location parameter.');
 
-    switch($status) {
+    ($data->temporary === 'true') ? $type = 302 : $type = 1;
 
-      case 'create':
-
-        if(empty($data->redirect_location))
-          $this->send_response('Missing redirect_location parameter.');
-
-        update_post_meta($post_id,'_cp_redirect_location',$data->redirect_location);
-        $update = update_post_meta($post_id,'_cp_license_type',$type);
-
-      break;
-
-      case 'update':
-
-        if(empty($data->redirect_location))
-          $this->send_response('Missing redirect_location parameter.');
-
-        update_post_meta($post_id,'_cp_redirect_location',$data->redirect_location);
-        $update = update_post_meta($post_id,'_cp_license_type',$type);
-
-      break;
-
-      case 'delete':
-
-        delete_post_meta($post_id,'_cp_redirect_location');
-        $update = delete_post_meta($post_id,'_cp_license_type');
-
-      break;
-
-      default:
-        $this->send_response('status not found.');
-
-      break;
-
-
-    }
+    update_post_meta($post_id,'_cp_redirect_location',$data->redirect_location);
+    $update = update_post_meta($post_id,'_cp_license_type',$type);
 
     if($update)
       $this->send_response('success');
     else
       $this->send_response('error');
 
+  }
 
+  protected function delete_full_traffic_license($data) {
 
+    if(empty($data->post_id))
+      $this->send_response('Missing post_id parameter.');
+
+    $post_id = $data->post_id;
+
+    delete_post_meta($post_id,'_cp_redirect_location');
+    $update = delete_post_meta($post_id,'_cp_license_type');
+
+    if($update)
+      $this->send_response('success');
+    else
+      $this->send_response('error');
   }
 
   /**
