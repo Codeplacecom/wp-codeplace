@@ -6,11 +6,9 @@
 */
 function cp_redirect_license(){
   global $post;
-
   if(is_singular()){
     $license_type = get_post_meta($post->ID, '_cp_license_type', true);
-
-    if($license_type == '1' || $license_type == '4'){ //1=301,4=302
+    if($license_type == '301' || $license_type == '302'){
 
       $redirect_url = get_post_meta($post->ID, '_cp_redirect_location', true);
 
@@ -25,10 +23,10 @@ function cp_redirect_license(){
 
         $hyper_cache_stop = true;
 
-        if($license_type == '1')
+        if($license_type == '301')
           wp_redirect($redirect_url, 301);
 
-        if($license_type == '4')
+        if($license_type == '302')
           wp_redirect($redirect_url, 302);
       }
 
@@ -57,80 +55,3 @@ function cp_w3tc_force_cache_empty() {
     if(file_exists($cache_route_2)) unlink($cache_route_2);
   }
 }
-
-
-/**
-* This function migrates posts from the old custom field license structure to the new.
-* ------
-* We should be able to delete this once all bloggers are on plugin V 2.5+
-*/
-function cp_redirect_license_legacy(){
-  global $post;
-
-  if(is_singular()){
-
-    if(get_post_meta($post->ID, 'cp_redirect', true)) {
-
-      $redirect_url = get_post_meta($post->ID, 'cp_redirect', true);
-
-      update_post_meta($post->ID,'_cp_license_type','1');
-      update_post_meta($post->ID,'_cp_redirect_location',$redirect_url);
-      delete_post_meta($post->ID,'cp_redirect');
-
-
-    }
-
-  }
-}
-add_action('template_redirect', 'cp_redirect_license_legacy');
-
-
-
-function cp_guest_author_name( $name ) {
-  global $post;
-
-  if($post->post_author == get_option('cp_user_id')) {
-
-    $author = get_post_meta( $post->ID, '_cp_author_name', true );
-
-
-    if($author)
-      return $author;
-
-    return 'Guest Author';
-
-  } else {
-
-    return $name;
-  }
-
-}
-
-function cp_guest_author_url($url) {
-  global $post;
-
-  if($post->post_author == get_option('cp_user_id')) {
-
-    $guest_url = get_post_meta( $post->ID, '_cp_authorrank_url', true );
-
-
-    if($guest_url) {
-      return $guest_url;
-    } else {
-      return $url;
-    }
-
-  } else {
-
-    return $url;
-
-  }
-
-
-}
-
-
-add_filter( 'the_author', 'cp_guest_author_name' );
-add_filter( 'get_the_author_display_name', 'cp_guest_author_name' );
-
-add_filter( 'author_link', 'cp_guest_author_url' );

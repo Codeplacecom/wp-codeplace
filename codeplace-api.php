@@ -84,12 +84,13 @@ class Codeplace_API {
       $this->send_response('data parameter is missing.');
 
     $data = base64_decode($_REQUEST['data']);
+    $signature = base64_decode($_REQUEST['signature']);
+
     $cp_public = get_option("cp_public_key");
+    if(openssl_verify($data, $signature, $cp_public, 'SHA256') !== 1)
+      $this->send_response('Signature verification failed');
 
-    if(!openssl_public_decrypt($data, &$decrypted_data, $cp_public))
-      $this->send_response('Decryption failed');
-
-    return json_decode($decrypted_data);
+    return json_decode($data); // json_decode($decrypted_data);
   }
 
   /** Response Handler
@@ -97,74 +98,58 @@ class Codeplace_API {
   */
   protected function send_response($msg, $data = ''){
     $response['message'] = $msg;
-    if($data)
-      $response['data'] = $data;
+    if($data) {
+      // AES
+      // Generate a 256-bit encryption key and an initialization vector
+      $encryption_key = openssl_random_pseudo_bytes(32);
+      $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('aes-256-cbc'));
+
+      // Encrypt $data using aes-256-cbc cipher
+      $data = json_encode($data);
+      $encrypted_data = openssl_encrypt($data, 'aes-256-cbc', $encryption_key, OPENSSL_RAW_DATA, $iv);
+      $encrypted_data = base64_encode($encrypted_data);
+      // end AES
+
+      // RSA
+      // Get key
+      $cp_public = get_option("cp_public_key");
+
+      // Encrypt secrets
+      $secrets = json_encode(array('key' => base64_encode($encryption_key), 'iv' => base64_encode($iv)));
+      openssl_public_encrypt($secrets, $encrypted_secrets, $cp_public);
+      $encrypted_secrets = base64_encode($encrypted_secrets);
+      // end RSA
+
+      // Build response
+      $response['data'] = $encrypted_data;
+      $response['secret'] = $encrypted_secrets;
+    }
     header('content-type: application/json; charset=utf-8');
-      echo json_encode($response)."\n";
-      exit;
+    echo json_encode($response)."\n";
+    exit;
   }
 
   /**
   * Setup Codeplace authentication
   */
   protected function complete_registration($data){
-    if($data->blog->url == site_url()) {
+    if($data->blog->url == site_url() &&
+      $data->token == get_option('cp_registration_token')) {
       update_option('cp_uuid',$data->blog->uuid);
       update_option('cp_user_email',$data->user->email);
       update_option('cp_user_name',$data->user->name);
 
-      $this->send_response('success');
+      $blogdata = array('blog' => array(
+        'name' => get_bloginfo('name'),
+        'description' => get_bloginfo('description'),
+        'admin_email' => get_bloginfo('admin_email'),
+        'wp_version' => get_bloginfo('version'),
+        'plugin_version' => get_option('cp_plugin_version_number'))
+      );
+
+      $this->send_response('success', $blogdata);
     }
-    $this->send_response('wrong url: '.$data->blog->url.' - '.site_url());
-
-
-    // $cp_public = get_option("cp_public_key");
-
-    // $data = array('domain' => site_url());
-    // $data = json_encode($data);
-    // openssl_public_encrypt($data, &$encrypted_data, $cp_public);
-
-    // $post_data = array('encrypted' => $encrypted_data);
-
-    // $this->add_endpoint();
-    // flush_rewrite_rules();
-
-    // $request = wp_remote_post( CP_API.'connect/wordpress', array(
-    //   'method' => 'POST',
-    //   'sslverify' => false,
-    //   'body' => $post_data
-    // ));
-
-    // if(is_wp_error($request))
-    //   $this->send_response($request->get_error_message());
-
-    // $response = json_decode($request['body']);
-
-    // if($response->status == 'success') {
-    //   $encrypted = base64_decode($response->data);
-    //   if(openssl_public_decrypt($encrypted, &$decrypted_data, $cp_public)){
-
-    //     if($decrypted_data->blog->url == site_url()) {
-    //       update_option('cp_uuid',$decrypted_data->blog->uuid);
-    //       update_option('cp_user_email',$decrypted_data->user->email);
-    //       update_option('cp_user_name',$decrypted_data->user->name);
-
-    //       $this->send_response('success');
-    //     }
-    //     $this->send_response('urls dont match');
-
-    //   }
-    //   $this->send_response('decryption failed');
-    // }
-    // $this->send_response('cp server did not return status success');
-  }
-
-  /**
-  * This method allows us to check if the blogger has our plugin installed.
-  */
-  protected function hello($data) {
-
-    $this->send_response('success');
+    $this->send_response('Bad token or url');
   }
 
   /**
@@ -180,10 +165,18 @@ class Codeplace_API {
     $plugin_info['uuid'] = get_option("cp_uuid");
     $plugin_info['wp_version'] = get_bloginfo('version');
 
-
-
     $this->send_response('success',$plugin_info);
 
+  }
+
+  protected function get_post_ids($data) {
+    $args = array(
+        'nopaging' => true
+    );
+    $latest = new WP_Query($args);
+    $data = wp_list_pluck( $latest->posts, 'post_modified_gmt', 'ID' );
+
+    $this->send_response('success',$data);
   }
 
   /**
@@ -224,18 +217,19 @@ class Codeplace_API {
   * @param post_id (integer) - required
   * @param redirect_location (string)
   */
-  protected function create_full_traffic_license($data) {
+  protected function create_license($data) {
 
-    if(empty($data->post_id))
+    if(empty($data->post->id))
       $this->send_response('Missing post_id parameter.');
 
-    $post_id = $data->post_id;
+    $post_id = $data->post->id;
 
     if(empty($data->redirect_location))
       $this->send_response('Missing redirect_location parameter.');
 
-    ($data->temporary === 'true') ? $type = 302 : $type = 1;
+    ($data->temporary === 'true') ? $type = 302 : $type = 301;
 
+    update_post_meta($post_id,'_cp_has_active_licence','true');
     update_post_meta($post_id,'_cp_redirect_location',$data->redirect_location);
     $update = update_post_meta($post_id,'_cp_license_type',$type);
 
@@ -246,13 +240,14 @@ class Codeplace_API {
 
   }
 
-  protected function delete_full_traffic_license($data) {
+  protected function delete_license($data) {
 
-    if(empty($data->post_id))
+    if(empty($data->post->id))
       $this->send_response('Missing post_id parameter.');
 
-    $post_id = $data->post_id;
+    $post_id = $data->post->id;
 
+    delete_post_meta($post_id,'_cp_has_active_licence');
     delete_post_meta($post_id,'_cp_redirect_location');
     $update = delete_post_meta($post_id,'_cp_license_type');
 
@@ -267,125 +262,25 @@ class Codeplace_API {
   * @param args (array)
   */
   protected function get_posts($data) {
+    // if(empty($data->ids))
+    //   $this->send_response('missing ids');
 
-    if(empty($data->args))
-      $posts = get_posts();
-    else
-      $posts = get_posts($data->args);
+    $args = array('post__in' => $data->ids);
+    $posts = query_posts( $args );
 
-    if($posts)
+    if($posts) {
       foreach($posts as $post) {
         $post->post_author = get_userdata($post->post_author)->display_name;
         $post->processed_content = do_shortcode( wpautop($post->post_content) );
         $post->permalink = get_permalink($post->ID);
       }
-
-
-
+    }
+    // var_dump($posts);
+    // echo json_encode($posts);
+    // exit;
     if($posts)
       $this->send_response('success',$posts);
     else
       $this->send_response('error');
   }
-
-  /**
-  * This methods creates/updates/deletes a full traffic license.
-  * @param post (array)
-  * @param status (create|update|delete) - optional, default: create
-  */
-  protected function draft_post($data) {
-
-
-    if(empty($data->status))
-      $status = 'create';
-    else
-      $status = $data->status;
-
-
-    switch($status) {
-
-      case 'create':
-
-        if(empty($data->post))
-          $this->send_response('Missing post array.');
-
-        $post = $data->post;
-        $post['post_status'] = 'draft';
-
-        $create_post = wp_insert_post($post);
-
-        if(is_wp_error($create_post)) {
-
-          $this->send_response($create_post->get_error_message());
-
-        } else {
-
-          $update = update_post_meta($create_post,'_cp_is_codeplace_post','true');
-
-          $this->send_response('success',array('post_id' => $create_post));
-        }
-
-
-      break;
-
-      case 'update':
-
-        if(empty($data->post))
-          $this->send_response('Missing post array.');
-
-        $post = $data->post;
-
-        $check_for_codeplace_post = get_post_meta($post['ID'],'_cp_is_codeplace_post',true);
-
-        if(!$check_for_codeplace_post)
-          $this->send_response('This is not a codeplace post.  You cannot edit this post.');
-
-        unset($post['post_status']);
-
-        $update_post = wp_update_post($post);
-
-        if(is_wp_error($create_post)) {
-
-          $this->send_response($update_post->get_error_message());
-
-        } else {
-
-          $update = update_post_meta($update_post,'_cp_is_codeplace_post','true');
-
-          $this->send_response('success',array('post_id' => $update_post));
-        }
-
-      break;
-
-      case 'delete':
-        if(empty($data->post))
-          $this->send_response('Missing post array.');
-
-        $post = $data->post;
-
-        $check_for_codeplace_post = get_post_meta($post['ID'],'_cp_is_codeplace_post',true);
-
-        if(!$check_for_codeplace_post)
-          $this->send_response('This is not a codeplace post.  You cannot edit this post.');
-
-
-        $update = wp_delete_post($post['ID']);
-
-
-      break;
-
-      default:
-        $this->send_response('status not found.');
-      break;
-
-
-    }
-
-    if($update)
-      $this->send_response('success');
-    else
-      $this->send_response('error');
-
-  }
-
 }

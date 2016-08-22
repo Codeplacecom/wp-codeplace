@@ -1,7 +1,9 @@
 <?php
 // Set the Options Page
 function cp_display_settings(){
+  global $codeplace_plugin;
   $uuid = get_option('cp_uuid');
+
 ?>
 
 <div class="wrap">
@@ -9,18 +11,12 @@ function cp_display_settings(){
   <div style="padding-top: 20px; width: 100%;">
 
 <?php
-  if(!empty($uuid)){ // Remove !
+  if(empty($uuid)){ // Remove !
 ?>
-
 
     <div style="display: inline-block; width:40%; margin-right: 10px; padding: 1em; background-color: white;">
       <h3>Writer</h3>
-      <a class="button button-primary button-hero" href="http://writers.codeplace.com/connect/wordpress?blog=<?php echo urlencode(site_url()); ?>&return_url=<?php echo urlencode(menu_page_url("codeplace_settings", false)); ?>">Connect with your Codeplace Writer Account</a>
-
-    </div>
-    <div style="display: inline-block; width:40%; padding: 1em; background-color: white;">
-      <h3>Company</h3>
-      <a class="button button-primary button-hero" href="http://companies.codeplace.com/connect/wordpress?blog=<?php echo urlencode(site_url()); ?>&return_url=<?php echo urlencode(menu_page_url("codeplace_settings", false)); ?>">Connect with your Codeplace Company Account</a>
+      <a class="button button-primary button-hero" href="http://writers.codeplace.com/app/connect?blog=<?php echo urlencode(site_url()); ?>&auth=<?php echo urlencode($codeplace_plugin->generate_registration_token()); ?>&return_url=<?php echo urlencode(menu_page_url("codeplace", false)); ?>">Connect with your Codeplace Writer Account</a>
 
     </div>
 
@@ -39,7 +35,25 @@ function cp_display_settings(){
 
 
 <?php
+
+
+echo 'Debug';
+echo '<br>';
+echo 'cp_plugin_version_number: '.get_option('cp_plugin_version_number');
+echo '<br>';
+echo 'cp_activation_redirect: '.get_option('cp_activation_redirect');
+echo '<br>';
+echo 'cp_public_key: '.get_option('cp_public_key');
+echo '<br>';
+echo 'cp_uuid: '.get_option('cp_uuid');
+echo '<br>';
+echo 'cp_user_email: '.get_option('cp_user_email');
+echo '<br>';
+echo 'cp_user_name: '.get_option('cp_user_name');
+echo '<br>';
+echo 'cp_activation_error: '.get_option('cp_activation_error');
+
+// End debug
+
 } // end function
 ?>
-
-
